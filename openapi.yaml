@@ -1,0 +1,407 @@
+openapi: 3.0.3
+info:
+  title: FLYT Mobility API
+  version: 1.0.0
+  description: |
+    Production foundation for the FLYT ride-hailing platform.
+    All business state changes are authoritative on the server.
+    Socket.IO is used for realtime updates only.
+servers:
+  - url: http://localhost:5050/api/v1
+    description: Local development
+tags:
+  - name: Auth
+  - name: Customers
+  - name: Pilots
+  - name: Rides
+  - name: Payments
+  - name: Admin
+  - name: Safety
+paths:
+  /auth/send-otp:
+    post:
+      tags: [Auth]
+      summary: Send login OTP
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, example: "+919876543210" }
+                purpose: { type: string, enum: [login, signup, ride_start] }
+                userType: { type: string, enum: [CUSTOMER, PILOT, ADMIN] }
+      responses:
+        "200":
+          description: OTP dispatched
+  /auth/verify-otp:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and issue tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, otp]
+              properties:
+                phone: { type: string }
+                otp: { type: string }
+                purpose: { type: string }
+                userType: { type: string, enum: [CUSTOMER, PILOT, ADMIN] }
+      responses:
+        "200":
+          description: Tokens issued
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Rotate refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: New token pair
+  /auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke refresh token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refreshToken]
+              properties:
+                refreshToken: { type: string }
+      responses:
+        "200":
+          description: Logged out
+  /auth/admin/login:
+    post:
+      tags: [Auth]
+      summary: Admin email/password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        "200":
+          description: Admin tokens
+  /customers/me:
+    get:
+      tags: [Customers]
+      security: [{ bearerAuth: [] }]
+      summary: Get current customer profile
+      responses:
+        "200":
+          description: Customer profile with eligibility
+    patch:
+      tags: [Customers]
+      security: [{ bearerAuth: [] }]
+      summary: Update customer profile
+      responses:
+        "200":
+          description: Updated profile
+  /customers/me/emergency-contacts:
+    get:
+      tags: [Customers]
+      security: [{ bearerAuth: [] }]
+      summary: List emergency contacts
+      responses:
+        "200":
+          description: Contacts
+    post:
+      tags: [Customers]
+      security: [{ bearerAuth: [] }]
+      summary: Add emergency contact
+      responses:
+        "201":
+          description: Created
+  /pilots/me:
+    get:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Get current pilot profile
+      responses:
+        "200":
+          description: Pilot profile
+    patch:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Update pilot profile
+      responses:
+        "200":
+          description: Updated
+  /pilots/availability/online:
+    post:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Go online
+      responses:
+        "200":
+          description: Online
+  /pilots/availability/offline:
+    post:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Go offline
+      responses:
+        "200":
+          description: Offline
+  /pilots/location:
+    post:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Update GPS location (PostGIS + Redis)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [latitude, longitude]
+              properties:
+                latitude: { type: number }
+                longitude: { type: number }
+                heading: { type: number }
+                speedMps: { type: number }
+      responses:
+        "200":
+          description: Location updated
+  /pilot/offers:
+    get:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: List pending ride offers
+      responses:
+        "200":
+          description: Offers
+  /pilot/offers/{offerId}/accept:
+    post:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Accept ride offer (atomic assignment)
+      parameters:
+        - in: path
+          name: offerId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Accepted
+        "409":
+          description: Duplicate assignment prevented
+  /pilot/offers/{offerId}/reject:
+    post:
+      tags: [Pilots]
+      security: [{ bearerAuth: [] }]
+      summary: Reject ride offer
+      parameters:
+        - in: path
+          name: offerId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Rejected
+  /rides/quote:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Create fare quote (server-side pricing)
+      responses:
+        "200":
+          description: Quote with breakdown
+  /rides:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Create ride from quote
+      responses:
+        "201":
+          description: Ride created and dispatch started
+  /rides/{rideId}:
+    get:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Get ride details
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Ride
+  /rides/{rideId}/cancel:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Cancel ride
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Cancelled
+  /rides/{rideId}/arrived:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Pilot arrived at pickup
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Arrived; trip OTP issued
+  /rides/{rideId}/verify-otp:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Verify trip start OTP
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Verified
+  /rides/{rideId}/start:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Start trip after OTP
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: In progress
+  /rides/{rideId}/complete:
+    post:
+      tags: [Rides]
+      security: [{ bearerAuth: [] }]
+      summary: Complete trip and calculate settlement
+      parameters:
+        - in: path
+          name: rideId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Completed
+  /payments/create-order:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Create payment order
+      responses:
+        "201":
+          description: Order created
+  /payments/verify:
+    post:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Verify client payment signature
+      responses:
+        "200":
+          description: Captured
+  /payments/webhooks/razorpay:
+    post:
+      tags: [Payments]
+      summary: Razorpay webhook (signature verified)
+      responses:
+        "200":
+          description: Accepted
+  /payments/{paymentId}:
+    get:
+      tags: [Payments]
+      security: [{ bearerAuth: [] }]
+      summary: Get payment
+      parameters:
+        - in: path
+          name: paymentId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Payment
+  /admin/dashboard:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: Ops dashboard metrics
+      responses:
+        "200":
+          description: Metrics
+  /admin/rides:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: List rides
+      responses:
+        "200":
+          description: Rides
+  /admin/pilots:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: List pilots
+      responses:
+        "200":
+          description: Pilots
+  /admin/customers:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: List customers
+      responses:
+        "200":
+          description: Customers
+  /admin/payments:
+    get:
+      tags: [Admin]
+      security: [{ bearerAuth: [] }]
+      summary: List payments
+      responses:
+        "200":
+          description: Payments
+  /safety/sos:
+    post:
+      tags: [Safety]
+      security: [{ bearerAuth: [] }]
+      summary: Trigger SOS incident
+      responses:
+        "201":
+          description: SOS created
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
